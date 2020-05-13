@@ -1,4 +1,5 @@
 """Euclidean Knowledge Graph embedding models where embeddings are in complex space."""
+
 import torch
 from torch import nn
 
@@ -92,4 +93,3 @@ class RotatE(BaseC):
             head_e[0] * sin + head_e[1] * cos
         ], 1)
         return lhs_e, self.bh(queries[:, 0])
-

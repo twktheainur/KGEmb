@@ -32,6 +32,27 @@ class KGDataset(object):
         self.n_entities = int(max(max_axis[0], max_axis[2]) + 1)
         self.n_predicates = int(max_axis[1] + 1) * 2
 
+        self.entity_index = {}
+        self.entity_reverse_index = {}
+        self.relation_index = {}
+        self.relation_reverse_index = {}
+
+        # Loading entity mapping (format: <uri>\t[0-9]+)
+        entity_id_file = os.path.join(self.data_path, "ent_id")
+        with open(entity_id_file, 'r') as entity_map:
+            for line in entity_map.readlines():
+                parts = line.split("\t")
+                self.entity_index[parts[0]] = int(parts[1])
+                self.entity_reverse_index[int(parts[1])] = parts[0]
+
+        # Loading relation mapping (format: <uri>\t[0-9]+)
+        rel_id_file = os.path.join(self.data_path, "rel_id")
+        with open(rel_id_file, 'r') as rel_map:
+            for line in rel_map.readlines():
+                parts = line.split("\t")
+                self.relation_index[parts[0]] = int(parts[1])
+                self.relation_reverse_index[int(parts[1])] = parts[0]
+
     def get_examples(self, split, rel_idx=-1):
         """Get examples in a split.
 
@@ -64,3 +85,14 @@ class KGDataset(object):
         """Returns KG dataset shape."""
         return self.n_entities, self.n_predicates, self.n_entities
 
+    def get_node_id_from_name(self, name: str):
+        return self.entity_index[name]
+
+    def get_node_name_from_id(self, id: str):
+        return self.entity_reverse_index[id]
+
+    def get_rel_id_from_name(self, name: str):
+        return self.relation_index[name]
+
+    def get_rel_name_from_id(self, id: str):
+        return self.relation_reverse_index[id]

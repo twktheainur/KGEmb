@@ -1,26 +1,37 @@
 """Train Knowledge Graph embeddings for link prediction."""
 
 import argparse
+import glob
 import json
 import logging
 import os
+import re
 
+import numpy
 import torch
 import torch.optim
 
 import models
 import optimizers.regularizers as regularizers
-
 from datasets.kg_dataset import KGDataset
 from models import all_models
 from optimizers.kg_optimizer import KGOptimizer
 from utils.train import get_savedir, avg_both, format_metrics, count_params
 
+datasets = ['FB15K', 'WN', 'WN18RR', 'FB237', 'YAGO3-10', 'CKG-181019', 'CKG-181019-EXT']
+
 parser = argparse.ArgumentParser(
     description="Knowledge Graph Embedding"
 )
+
 parser.add_argument(
-    "--dataset", default="WN18RR", choices=["FB15K", "WN", "WN18RR", "FB237", "YAGO3-10"], help="Knowledge Graph dataset"
+    "--save-checkpoints", nargs=1, default=[''], dest="save_checkpoints",
+    help="Save checkpoints for each epoch for the current model and dataset to specified directory. "
+         "If checkpoints are present in directory, resumes from the last.")
+
+parser.add_argument(
+    "--dataset", default="WN18RR", choices=datasets,
+    help="Knowledge Graph dataset"
 )
 parser.add_argument(
     "--model", default="RotE", choices=all_models, help="Knowledge Graph embedding model"
@@ -119,12 +130,35 @@ def train(args):
     with open(os.path.join(save_dir, "config.json"), "w") as fjson:
         json.dump(vars(args), fjson)
 
-    # create model
+    # If save-checkpoint is enabled, very directory exists, if not disables save-checkpoints
+    save_checkpoints_path = args.save_checkpoints
+    save_checkpoints = len(save_checkpoints_path) > 0 and len(save_checkpoints_path[0].strip()) > 0
+    if save_checkpoints:
+        save_checkpoints_path = save_checkpoints_path[0]
+        if os.path.exists(save_checkpoints_path):
+            save_checkpoints_path = f"" + save_checkpoints_path + os.sep + args.model + "_" + args.dataset + "_{epochnum}.pt"
+        else:
+            save_checkpoints = False
+            print("Directory specified for --save-checkpoints doesn't exist!")
+
+    checkpoint_epoch = -1
+
     model = getattr(models, args.model)(args)
     total = count_params(model)
     logging.info("Total number of parameters {}".format(total))
     device = "cuda"
     model.to(device)
+
+    if save_checkpoints:
+        checkpoint_dumps = glob.glob(save_checkpoints_path.format(epochnum="*"))
+        if len(checkpoint_dumps) > 0:
+            epoch_num_pattern = re.compile(".*_([0-9]+)\.pt")
+            numbers = []
+            for checkpoint in checkpoint_dumps:
+                matches = re.match(epoch_num_pattern, checkpoint)
+                numbers.append(int(matches.group(1)))
+            checkpoint_epoch = numpy.array(numbers).max(initial=0) + 1
+            model.load_state_dict(torch.load(save_checkpoints_path.format(epochnum=str(checkpoint_epoch - 1))))
 
     # get optimizer
     regularizer = getattr(regularizers, args.regularizer)(args.reg)
@@ -134,9 +168,15 @@ def train(args):
     counter = 0
     best_mrr = None
     best_epoch = None
-    logging.info("\t Start training")
-    for step in range(args.max_epochs):
 
+    if checkpoint_epoch > -1:
+        training_range = range(checkpoint_epoch, args.max_epochs)
+        print("\t Resuming training at epoch " + str(checkpoint_epoch))
+    else:
+        logging.info("\t Start training")
+        training_range = range(args.max_epochs)
+
+    for step in training_range:
         # Train step
         model.train()
         train_loss = optimizer.epoch(train_examples)
@@ -148,7 +188,7 @@ def train(args):
         logging.info("\t Epoch {} | average valid loss: {:.4f}".format(step, valid_loss))
 
         if (step + 1) % args.valid == 0:
-            valid_metrics = avg_both(*model.compute_metrics(valid_examples, filters)) 
+            valid_metrics = avg_both(*model.compute_metrics(valid_examples, filters))
             logging.info(format_metrics(valid_metrics, split="valid"))
 
             valid_mrr = valid_metrics["MRR"]
@@ -169,6 +209,11 @@ def train(args):
                     # logging.info("\t Reducing learning rate")
                     # optimizer.reduce_lr()
 
+        if save_checkpoints:
+            path = save_checkpoints_path.format(epochnum=step)
+            print("Saving epoch {epochnum} model to {path} ...".format(epochnum=step, path=path))
+            torch.save(model.state_dict(), path)
+
     logging.info("\t Optimization finished")
     if not best_mrr:
         torch.save(model.cpu().state_dict(), os.path.join(save_dir, "model.pt"))
@@ -177,7 +222,7 @@ def train(args):
         model.load_state_dict(torch.load(os.path.join(save_dir, "model.pt")))
     model.cuda()
     model.eval()
-    
+
     # Validation metrics
     valid_metrics = avg_both(*model.compute_metrics(valid_examples, filters))
     logging.info(format_metrics(valid_metrics, split="valid"))
@@ -188,5 +233,5 @@ def train(args):
 
 
 if __name__ == "__main__":
-    train(parser.parse_args())
-
+    args = parser.parse_args()
+    train(args)

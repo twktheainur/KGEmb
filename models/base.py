@@ -1,5 +1,6 @@
 """Base Knowledge Graph embedding model."""
 from abc import ABC, abstractmethod
+from copy import copy
 
 import torch
 from torch import nn
@@ -53,6 +54,36 @@ class KGModel(nn.Module, ABC):
              lhs_biases: torch.Tensor with head entities' biases
         """
         pass
+
+    def get_entity_embedding(self, id: int, bias: str = None):
+        """
+        Get entity embeddings from its id.
+        Args:
+            id: The numerical id of the entity
+            bias: Specify whether to get the left or right embedding bias in addition to the entity embeddings
+            [None, "left", right] Default = None
+        Returns: if bias=None, returns a single Tensor (1xrank)
+        if bias = "left" return a tuple (emb, left_bias) with dimensions ((1xrank), (1xrank))
+        if bias = "right" return a tuple (emb, right_bias) with dimensions ((1xrank), (1xrank))
+        """
+        entity_embedding = copy(self.embeddings[0].weight.data[id].transpose(0, 1)).resize_(self.rank)
+        if bias == "left":
+            left_bias = copy(self.bh.weight.data[id]).resize_(self.rank)
+            return entity_embedding, left_bias
+        if bias == "right":
+            right_bias = copy(self.bt.weight.data[id]).resize_(self.rank)
+            return entity_embedding, right_bias
+        else:
+            return entity_embedding
+
+    def get_relation_embedding(self, id: int):
+        """
+        Get relation embeddings from its id.
+        Args:
+            id: The numerical id of the relation
+        Returns: A single Tensor of (1xrank) dimension
+        """
+        return copy(self.embeddings[1].weight.data[id].transpose(0, 1)).resize(self.rank)
 
     @abstractmethod
     def get_rhs(self, queries, eval_mode):
@@ -170,7 +201,7 @@ class KGModel(nn.Module, ABC):
 
                 scores = self.score(q, candidates, eval_mode=True)
                 targets = self.score(q, rhs, eval_mode=False)
-                
+
                 # set filtered and true scores to -1e6 to be ignored
                 for i, query in enumerate(these_queries):
                     filter_out = filters[(query[0].item(), query[1].item())]
@@ -211,6 +242,5 @@ class KGModel(nn.Module, ABC):
                 lambda x: torch.mean((ranks <= x).float()).item(),
                 (1, 3, 10)
             ))))
-        
-        return mean_rank, mean_reciprocal_rank, hits_at
 
+        return mean_rank, mean_reciprocal_rank, hits_at
