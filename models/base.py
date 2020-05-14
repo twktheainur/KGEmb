@@ -4,6 +4,7 @@ from copy import copy
 
 import torch
 from torch import nn
+from tqdm import tqdm
 
 
 class KGModel(nn.Module, ABC):
@@ -189,28 +190,31 @@ class KGModel(nn.Module, ABC):
         Returns:
             ranks: torch.Tensor with ranks or correct entities
         """
-        ranks = torch.ones(len(queries))
-        with torch.no_grad():
-            b_begin = 0
-            candidates = self.get_rhs(queries, eval_mode=True)
-            while b_begin < len(queries):
-                these_queries = queries[b_begin:b_begin + batch_size].cuda()
 
-                q = self.get_queries(these_queries)
-                rhs = self.get_rhs(these_queries, eval_mode=False)
+        with tqdm(desc="Ranking", total=len(queries)) as pbar:
+            ranks = torch.ones(len(queries))
+            with torch.no_grad():
+                b_begin = 0
+                candidates = self.get_rhs(queries, eval_mode=True)
+                while b_begin < len(queries):
+                    these_queries = queries[b_begin:b_begin + batch_size].cuda()
 
-                scores = self.score(q, candidates, eval_mode=True)
-                targets = self.score(q, rhs, eval_mode=False)
+                    q = self.get_queries(these_queries)
+                    rhs = self.get_rhs(these_queries, eval_mode=False)
 
-                # set filtered and true scores to -1e6 to be ignored
-                for i, query in enumerate(these_queries):
-                    filter_out = filters[(query[0].item(), query[1].item())]
-                    filter_out += [queries[b_begin + i, 2].item()]
-                    scores[i, torch.LongTensor(filter_out)] = -1e6
-                ranks[b_begin:b_begin + batch_size] += torch.sum(
-                    (scores >= targets).float(), dim=1
-                ).cpu()
-                b_begin += batch_size
+                    scores = self.score(q, candidates, eval_mode=True)
+                    targets = self.score(q, rhs, eval_mode=False)
+
+                    # set filtered and true scores to -1e6 to be ignored
+                    for i, query in enumerate(these_queries):
+                        filter_out = filters[(query[0].item(), query[1].item())]
+                        filter_out += [queries[b_begin + i, 2].item()]
+                        scores[i, torch.LongTensor(filter_out)] = -1e6
+                    ranks[b_begin:b_begin + batch_size] += torch.sum(
+                        (scores >= targets).float(), dim=1
+                    ).cpu()
+                    b_begin += batch_size
+                    pbar.update(batch_size)
         return ranks
 
     def compute_metrics(self, examples, filters, batch_size=500):
