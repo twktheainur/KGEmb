@@ -188,7 +188,7 @@ def train(args):
         logging.info("\t Epoch {} | average valid loss: {:.4f}".format(step, valid_loss))
 
         if (step + 1) % args.valid == 0:
-            valid_metrics = avg_both(*model.compute_metrics(valid_examples, filters))
+            valid_metrics = avg_both(*model.compute_metrics(valid_examples, filters, batch_size=50))
             logging.info(format_metrics(valid_metrics, split="valid"))
 
             valid_mrr = valid_metrics["MRR"]
@@ -224,11 +224,11 @@ def train(args):
     model.eval()
 
     # Validation metrics
-    valid_metrics = avg_both(*model.compute_metrics(valid_examples, filters))
+    valid_metrics = avg_both(*model.compute_metrics(valid_examples, filters, batch_size=50))
     logging.info(format_metrics(valid_metrics, split="valid"))
 
     # Test metrics
-    test_metrics = avg_both(*model.compute_metrics(test_examples, filters))
+    test_metrics = avg_both(*model.compute_metrics(test_examples, filters, batch_size=50))
     logging.info(format_metrics(test_metrics, split="test"))
 
 
