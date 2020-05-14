@@ -61,6 +61,11 @@ parser.add_argument(
 parser.add_argument(
     "--batch_size", default=1000, type=int, help="Batch size"
 )
+
+parser.add_argument(
+    "--eval_batch_size", default=100, type=int, help="Batch size to use for evaluation"
+)
+
 parser.add_argument(
     "--neg_sample_size", default=50, type=int, help="Negative sample size, -1 to not use negative sampling"
 )
@@ -188,7 +193,7 @@ def train(args):
         logging.info("\t Epoch {} | average valid loss: {:.4f}".format(step, valid_loss))
 
         if (step + 1) % args.valid == 0:
-            valid_metrics = avg_both(*model.compute_metrics(valid_examples, filters, batch_size=50))
+            valid_metrics = avg_both(*model.compute_metrics(valid_examples, filters, batch_size=args.eval_batch_size))
             logging.info(format_metrics(valid_metrics, split="valid"))
 
             valid_mrr = valid_metrics["MRR"]
@@ -224,11 +229,11 @@ def train(args):
     model.eval()
 
     # Validation metrics
-    valid_metrics = avg_both(*model.compute_metrics(valid_examples, filters, batch_size=50))
+    valid_metrics = avg_both(*model.compute_metrics(valid_examples, filters, batch_size=args.eval_batch_size))
     logging.info(format_metrics(valid_metrics, split="valid"))
 
     # Test metrics
-    test_metrics = avg_both(*model.compute_metrics(test_examples, filters, batch_size=50))
+    test_metrics = avg_both(*model.compute_metrics(test_examples, filters, batch_size=args.eval_batch_size))
     logging.info(format_metrics(test_metrics, split="test"))
 
 
